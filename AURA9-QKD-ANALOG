@@ -1,0 +1,42 @@
+# AURA9 QKD Analog Simulation
+# Analog Hall effect sensing + simple QKD with drift detection
+
+import numpy as np
+
+SCHUMANN_F = 7.83  # Hz
+GAIN_TUNE = 7.3 / SCHUMANN_F
+
+def analog_pre_filter(signal, freq=0.5):
+    t = np.linspace(0, 1, 2**16)
+    sine_grid = np.sin(2 * np.pi * freq * t * GAIN_TUNE)
+    return np.convolve(signal, sine_grid, mode='same')
+
+def read_gan_ring(ambient_em=0.0):
+    raw_v = np.random.randn(32) * 5e-6      # microvolt jitter
+    raw_b = np.random.randn(32, 3) * 12e-15 # femtotesla
+    synced = analog_pre_filter(raw_v + ambient_em)
+    return synced, raw_b
+
+def free_space_qkd():
+    pulses = np.random.choice([0, 1], size=256)
+    piezo_drift = 60 * np.sin(np.pi * np.arange(256) / 120)
+    r = np.random.poisson(0.003, 256)
+    keys = pulses[r > 0]
+    
+    if len(keys) < 32 or np.std(pulses[:len(keys)] - keys) > 0.11:
+        return "ALERT: drift attack", 0
+    
+    return keys[:32], piezo_drift.mean()
+
+# Run simulation
+t = np.linspace(0, 1, 256)
+ambient = np.sin(2 * np.pi * 50 * t) * 0.0001
+
+volt, mag = read_gan_ring(ambient_em=ambient)
+result, checksum = free_space_qkd()
+
+print("Bio-field raw (µV):", round(np.mean(volt), 4))
+print("Mag field std (fT):", round(np.std(mag), 2))
+print("Quantum key:", result if isinstance(result, str) else ''.join(map(str, result)))
+print("Checksum (60Hz):", round(checksum, 1))
+print("Drift lock:", "NO" if isinstance(result, str) else "YES")
